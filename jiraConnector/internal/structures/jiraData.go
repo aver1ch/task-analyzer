@@ -1,4 +1,4 @@
-package structs
+package structures
 
 type JiraProject struct {
 	// response: ".../project"
@@ -17,9 +17,9 @@ type JiraIssues struct {
 }
 
 type JiraIssue struct {
-	Id     string  `json:"id"`
-	Key    string  `json:"key"`
-	Fields []Field `json:"fields"`
+	Id     string `json:"id"`
+	Key    string `json:"key"`
+	Fields Field  `json:"fields"`
 }
 
 type Field struct {

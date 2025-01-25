@@ -1,4 +1,4 @@
-package structs
+package structures
 
 type DBStatusChanges struct {
 	IssueId    int
