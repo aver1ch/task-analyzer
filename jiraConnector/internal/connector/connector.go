@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	configreader "github.com/jiraconnector/internal/configReader"
-	structures "github.com/jiraconnector/internal/structures"
+	"github.com/jiraconnector/internal/structures"
 )
 
 type JiraConnector struct {
@@ -49,6 +51,41 @@ func (con *JiraConnector) GetAllProjects() ([]structures.JiraProject, error) {
 	}
 
 	return projects, nil
+}
+
+func (con *JiraConnector) GetProjectsPage(search string, limit, page int) (*structures.ResponseProject, error) {
+	allProjects, err := con.GetAllProjects()
+	if err != nil {
+		log.Printf("error while get all projects: %v", err)
+		return nil, err
+	}
+
+	var pageProjects []structures.JiraProject
+	for _, proj := range allProjects {
+		if search == "" || containsSearchProject(proj.Name, search) {
+			pageProjects = append(pageProjects, proj)
+		}
+	}
+
+	totalProjects := len(pageProjects)
+	start := (page - 1) * limit
+	if start >= totalProjects {
+		return nil, nil
+	}
+	end := start + limit
+	if end > totalProjects {
+		end = totalProjects
+	}
+
+	return &structures.ResponseProject{
+			Projects: pageProjects[start:end],
+			PageInfo: structures.PageInfo{
+				PageCount:     int(math.Ceil(float64(totalProjects) / float64(limit))),
+				CurrentPage:   page,
+				ProjectsCount: totalProjects,
+			},
+		},
+		nil
 }
 
 func (con *JiraConnector) GetProjectIssues(projectId string) (*structures.JiraIssues, error) {
@@ -100,11 +137,15 @@ func (con *JiraConnector) retryRequest(method, url string) (*http.Response, erro
 		timeSleep *= 2
 
 		if timeSleep > con.cfg.MaxSleep {
-			timeSleep = con.cfg.MaxSleep
+			break
 		}
 	}
 
 	// if in cycle we didn't do response - return err
 	return nil, err
 
+}
+
+func containsSearchProject(str, substr string) bool {
+	return strings.Contains(strings.ToLower(str), strings.ToLower(substr))
 }
