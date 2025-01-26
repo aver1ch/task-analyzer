@@ -1,9 +1,11 @@
 package structures
 
+import "time"
+
 type DBStatusChanges struct {
 	IssueId    int
 	AuthorId   int
-	ChangeTime string //mayby time
+	ChangeTime time.Time
 	FromStatus string
 	ToStatus   string
 }
@@ -29,8 +31,8 @@ type DBIssue struct {
 	Type        string
 	Priority    string
 	Status      string
-	CreatedTime string //maybe time
-	ClosedTime  string //maybe time
-	UpdatedTime string //maybe time
+	CreatedTime time.Time
+	ClosedTime  time.Time
+	UpdatedTime time.Time
 	TimeSpent   int
 }
