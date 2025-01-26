@@ -16,16 +16,20 @@ import (
 )
 
 type JiraConnector struct {
-	maxRetry int
-	cfg      *configreader.JiraConfig
-	client   *http.Client
+	cfg    *configreader.JiraConfig
+	client *http.Client
 }
 
-func NewJiraConnector(config configreader.Config, maxRetry int) *JiraConnector {
+type JiraConnectorInterface interface {
+	GetAllProjects() ([]structures.JiraProject, error)
+	GetProjectsPage(search string, limit, page int) (*structures.ResponseProject, error)
+	GetProjectIssues(projectId string) ([]structures.JiraIssue, error)
+}
+
+func NewJiraConnector(config configreader.Config) *JiraConnector {
 	return &JiraConnector{
-		maxRetry: maxRetry,
-		cfg:      &config.JiraCfg,
-		client:   &http.Client{},
+		cfg:    &config.JiraCfg,
+		client: &http.Client{},
 	}
 }
 
@@ -113,23 +117,25 @@ func (con *JiraConnector) GetProjectIssues(projectId string) ([]structures.JiraI
 
 	for i := 0; i < threadCount; i++ {
 		wg.Add(1)
-		//fine start index for get issues
+		//find start index for get issues
 		issueStart := i*issueReq + 1
+		if issueStart > totalIssues {
+			issueStart = totalIssues
+		}
+
 		go func() {
 			defer wg.Done()
-			//TODO: should i add count of recuest like in example?
+			//TODO: should i add count of recquest like in example?
 
 			issues, err := con.getIssuesForOneThread(issueStart, projectId)
 			if err != nil {
-				log.Printf("error in thred num #%d: %v", i, err)
+				log.Printf("error in thread num #%d: %v", i, err)
 				//TODO: stop all threads
 			}
 
 			issuesMux.Lock()
 			defer issuesMux.Unlock()
-			for _, issue := range issues {
-				allIssues = append(issues, issue)
-			}
+			allIssues = append(allIssues, issues...)
 		}()
 	}
 
@@ -179,7 +185,7 @@ func (con *JiraConnector) retryRequest(method, url string) (*http.Response, erro
 		return nil, err
 	}
 
-	for i := 0; i < con.maxRetry; i++ {
+	for {
 		resp, err = con.client.Do(req)
 
 		// if everything ok - return resp
