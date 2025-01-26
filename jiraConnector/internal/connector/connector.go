@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	configreader "github.com/jiraconnector/internal/configReader"
@@ -88,8 +89,60 @@ func (con *JiraConnector) GetProjectsPage(search string, limit, page int) (*stru
 		nil
 }
 
-func (con *JiraConnector) GetProjectIssues(projectId string) (*structures.JiraIssues, error) {
-	url := fmt.Sprintf("%s/rest/api/2/search?jql=project=%s", con.cfg.Url, projectId)
+func (con *JiraConnector) GetProjectIssues(projectId string) ([]structures.JiraIssue, error) {
+
+	//get all issues for this project
+	totalIssues, err := con.getTotalIssues(projectId)
+	if err != nil {
+		log.Printf("error while get total issues: %v", err)
+		return nil, err
+	}
+
+	if totalIssues == 0 {
+		return nil, nil
+	}
+
+	//create common source = map for results
+	var allIssues []structures.JiraIssue
+	threadCount := con.cfg.ThreadCount
+	issueReq := con.cfg.IssueInOneReq
+
+	//create go routines
+	var wg sync.WaitGroup
+	var issuesMux sync.Mutex
+
+	for i := 0; i < threadCount; i++ {
+		wg.Add(1)
+		//fine start index for get issues
+		issueStart := i*issueReq + 1
+		go func() {
+			defer wg.Done()
+			//TODO: should i add count of recuest like in example?
+
+			issues, err := con.getIssuesForOneThread(issueStart, projectId)
+			if err != nil {
+				log.Printf("error in thred num #%d: %v", i, err)
+				//TODO: stop all threads
+			}
+
+			issuesMux.Lock()
+			defer issuesMux.Unlock()
+			for _, issue := range issues {
+				allIssues = append(issues, issue)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	return allIssues, nil
+}
+
+func (con *JiraConnector) getIssuesForOneThread(startAt int, projectId string) ([]structures.JiraIssue, error) {
+	url := fmt.Sprintf(
+		"%s/rest/api/2/search?jql=project=%s&startAt=%d&maxResult=%d",
+		con.cfg.Url, projectId, startAt, con.cfg.IssueInOneReq)
+
 	resp, err := con.retryRequest("GET", url)
 	if err != nil {
 		log.Printf("error while do request: %v", err)
@@ -109,7 +162,7 @@ func (con *JiraConnector) GetProjectIssues(projectId string) (*structures.JiraIs
 		return nil, err
 	}
 
-	return &issues, nil
+	return issues.Issues, nil
 }
 
 func (con *JiraConnector) retryRequest(method, url string) (*http.Response, error) {
@@ -144,6 +197,30 @@ func (con *JiraConnector) retryRequest(method, url string) (*http.Response, erro
 	// if in cycle we didn't do response - return err
 	return nil, err
 
+}
+
+func (con *JiraConnector) getTotalIssues(projectId string) (int, error) {
+	url := fmt.Sprintf("%s/rest/api/2/search?jql=project=%s&maxResults=0", con.cfg.Url, projectId)
+	resp, err := con.retryRequest("GET", url)
+	if err != nil {
+		log.Printf("error while do request: %v", err)
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("error while read get projects issues responce: %v", err)
+		return 0, err
+	}
+
+	var issues structures.JiraIssues
+	if err := json.Unmarshal(body, &issues); err != nil {
+		log.Printf("error while unmarshal get projects issues body: %v", err)
+		return 0, err
+	}
+
+	return issues.Total, nil
 }
 
 func containsSearchProject(str, substr string) bool {
