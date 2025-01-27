@@ -74,9 +74,10 @@ func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//trans
-	var issuesDb []structures.DBIssue
+	var dt datatransformer.DataTransformer
+	var issuesDb []datatransformer.DataTransformer
 	for _, issue := range issues {
-		issuesDb = append(issuesDb, datatransformer.TransformIssueDB(issue))
+		issuesDb = append(issuesDb, *dt.TransformToDbIssueSet(projectId, issue))
 	}
 	//push
 

@@ -7,37 +7,35 @@ import (
 	"github.com/jiraconnector/internal/structures"
 )
 
+type DataTransformer struct {
+	Project  structures.DBProject
+	Issue    structures.DBIssue
+	Author   structures.DBAuthor
+	Assignee structures.DBAuthor
+}
+
 //add changelog
 //func TransformStatusDB(jiraIssue structures.JiraIssue) structures.DBStatusChanges {}
 
-func TransformAuthorDB(jiraAuthor structures.User) structures.DBAuthor {
+func (dt *DataTransformer) TransformAuthorDB(jiraAuthor structures.User) structures.DBAuthor {
 	return structures.DBAuthor{
 		Name: jiraAuthor.Name,
 	}
 }
 
-func TransformProjectDB(jiraProject structures.JiraProject) structures.DBProject {
+func (dt *DataTransformer) TransformProjectDB(jiraProject structures.JiraProject) structures.DBProject {
 	return structures.DBProject{
 		Title: jiraProject.Name,
 	}
 }
 
-func TransformIssueDB(jiraIssue structures.JiraIssue) structures.DBIssue {
-	id, _ := strconv.Atoi(jiraIssue.Id)
-	prjId, _ := strconv.Atoi(jiraIssue.Fields.Project.Id)
-	authorId, _ := strconv.Atoi(jiraIssue.Fields.Author.Key)
-	assignedId, _ := strconv.Atoi(jiraIssue.Fields.Assignee.Key)
-
+func (dt *DataTransformer) TransformIssueDB(jiraIssue structures.JiraIssue) structures.DBIssue {
 	createdTime, _ := time.Parse("2006-01-002T15:04:05.999-0700", jiraIssue.Fields.CreatedTime)
 	closedTime, _ := time.Parse("2006-01-002T15:04:05.999-0700", jiraIssue.Fields.ClosedTime)
 	updatedTime, _ := time.Parse("2006-01-002T15:04:05.999-0700", jiraIssue.Fields.UpdatedTime)
 	timeSpent, _ := strconv.Atoi(jiraIssue.Fields.TimeSpent)
 
 	return structures.DBIssue{
-		Id:          id,
-		ProjectId:   prjId,
-		AuthorId:    authorId,
-		AssigneeId:  assignedId,
 		Key:         jiraIssue.Key,
 		Summary:     jiraIssue.Fields.Summary,
 		Description: jiraIssue.Fields.Description,
@@ -48,5 +46,14 @@ func TransformIssueDB(jiraIssue structures.JiraIssue) structures.DBIssue {
 		ClosedTime:  closedTime,
 		UpdatedTime: updatedTime,
 		TimeSpent:   timeSpent,
+	}
+}
+
+func (dt *DataTransformer) TransformToDbIssueSet(projectName string, jiraIssue structures.JiraIssue) *DataTransformer {
+	return &DataTransformer{
+		Project:  structures.DBProject{Title: projectName},
+		Issue:    dt.TransformIssueDB(jiraIssue),
+		Author:   dt.TransformAuthorDB(jiraIssue.Fields.Author),
+		Assignee: dt.TransformAuthorDB(jiraIssue.Fields.Assignee),
 	}
 }
