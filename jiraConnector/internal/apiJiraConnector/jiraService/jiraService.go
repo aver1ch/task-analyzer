@@ -16,9 +16,9 @@ func NewJiraService(config configreader.Config, jiraConnector connector.JiraConn
 	}
 }
 
-func (js *JiraService) GetProjectsPage(search string, limit, page int) (*structures.ResponseProject, error) {
+func (js JiraService) GetProjectsPage(search string, limit, page int) (*structures.ResponseProject, error) {
 	return js.jiraConnector.GetProjectsPage(search, limit, page)
 }
-func (js *JiraService) UpdateProjects(projectId string) ([]structures.JiraIssue, error) {
+func (js JiraService) UpdateProjects(projectId string) ([]structures.JiraIssue, error) {
 	return js.jiraConnector.GetProjectIssues(projectId)
 }

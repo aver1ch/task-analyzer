@@ -1,4 +1,4 @@
-package apijiraconnector
+package jirahandlers
 
 import (
 	"encoding/json"
