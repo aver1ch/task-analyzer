@@ -2,11 +2,13 @@ package jirahandlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/gorilla/mux"
+	myErr "github.com/jiraconnector/internal/apiJiraConnector/jiraHandlers/errors"
 	datatransformer "github.com/jiraconnector/internal/dataTransformer"
 	"github.com/jiraconnector/internal/structures"
 )
@@ -37,23 +39,25 @@ func (h *handler) projects(w http.ResponseWriter, r *http.Request) {
 
 	limit, page, search, err := getProjectParams(r)
 	if err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), http.StatusBadRequest) //TODO: norm errors
+		log.Printf("%v :: %v", myErr.ErrParamLimitPage, err)
+		http.Error(w, myErr.ErrParamLimitPage.Error(), myErr.GetStatusCode(myErr.ErrorsProject, myErr.ErrParamLimitPage))
 		return
 	}
 
 	projects, err := h.service.GetProjectsPage(search, limit, page)
 	if err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError) //TODO: norm errors
+		log.Printf("%v :: %v", myErr.ErrGetProjectPage, err)
+		http.Error(w, myErr.ErrGetProjectPage.Error(), myErr.GetStatusCode(myErr.ErrorsProject, myErr.ErrGetProjectPage))
 		return
 	}
 
 	if err = json.NewEncoder(w).Encode(projects); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError) //TODO: norm errors
+		log.Printf("%v :: %v", myErr.ErrEncodeAns, err)
+		http.Error(w, myErr.ErrEncodeAns.Error(), myErr.GetStatusCode(myErr.ErrorsProject, myErr.ErrEncodeAns))
 		return
 	}
 
+	log.Printf("Got project page: %d", page)
 	w.WriteHeader(http.StatusOK)
 
 }
@@ -61,23 +65,32 @@ func (h *handler) projects(w http.ResponseWriter, r *http.Request) {
 func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	vars := mux.Vars(r)
-	project := vars["project"]
+	project := r.URL.Query().Get("project")
 	if project == "" {
-		//log.Println(err)
-		//http.Error(w, err.Error(), http.StatusBadRequest) //TODO: norm errors
+		log.Printf("%v - %s", myErr.ErrParamProject, project)
+		http.Error(w, myErr.ErrParamProject.Error(), myErr.GetStatusCode(myErr.ErrorsUpdate, myErr.ErrParamProject))
 		return
 	}
 
 	issues, err := h.service.UpdateProjects(project)
 	if err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError) //TODO: norm errors
+		if errors.Is(err, myErr.ErrNoProject) {
+			log.Printf("%v - %s :: %v", myErr.ErrNoProject, project, err)
+			http.Error(w, myErr.ErrNoProject.Error(), myErr.GetStatusCode(myErr.ErrorsUpdate, myErr.ErrNoProject))
+		} else {
+			log.Printf("%v - %s :: %v", myErr.ErrUpdProject, project, err)
+			http.Error(w, myErr.ErrUpdProject.Error(), myErr.GetStatusCode(myErr.ErrorsUpdate, myErr.ErrUpdProject))
+		}
 		return
 	}
 
-	h.service.PushDataToDb(project, issues)
+	if err := h.service.PushDataToDb(project, issues); err != nil {
+		log.Printf("%v - %s :: %v", myErr.ErrPushProject, project, err)
+		http.Error(w, myErr.ErrPushProject.Error(), myErr.GetStatusCode(myErr.ErrorsUpdate, myErr.ErrPushProject))
+		return
+	}
 
+	log.Println("Update issues")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -87,26 +100,24 @@ func getProjectParams(r *http.Request) (int, int, string, error) {
 	page := 1
 	search := ""
 
-	vars := mux.Vars(r)
-
-	if vars["limit"] != "" {
-		limit, err = strconv.Atoi(vars["limit"])
-		if err != nil {
-			log.Printf("incorrect limit param: %v", err)
-			return 0, 0, "", err
+	if r.URL.Query().Get("limit") != "" {
+		limit, err = strconv.Atoi(r.URL.Query().Get("limit"))
+		if err != nil || limit <= 0 {
+			log.Printf("%v :: %v\n", myErr.ErrParamLimitPage, err)
+			return 0, 0, "", myErr.ErrParamLimitPage
 		}
 	}
 
-	if vars["page"] != "" {
-		page, err = strconv.Atoi(vars["page"])
-		if err != nil {
-			log.Printf("incorrect page param: %v", err)
-			return 0, 0, "", err
+	if r.URL.Query().Get("page") != "" {
+		page, err = strconv.Atoi(r.URL.Query().Get("page"))
+		if err != nil || page <= 0 {
+			log.Printf("%v :: %v\n", myErr.ErrParamLimitPage, err)
+			return 0, 0, "", myErr.ErrParamLimitPage
 		}
 	}
 
-	if vars["search"] != "" {
-		search = vars["search"]
+	if r.URL.Query().Get("search") != "" {
+		search = r.URL.Query().Get("search")
 	}
 
 	return limit, page, search, nil

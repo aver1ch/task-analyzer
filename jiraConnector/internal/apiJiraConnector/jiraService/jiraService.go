@@ -1,6 +1,7 @@
 package jiraservice
 
 import (
+	"fmt"
 	"log"
 
 	configreader "github.com/jiraconnector/internal/configReader"
@@ -16,12 +17,16 @@ type JiraService struct {
 	dbPusher        dbpusher.DbPusher
 }
 
-func NewJiraService(config configreader.Config, jiraConnector connector.JiraConnector) JiraService {
-	return JiraService{
+func NewJiraService(config configreader.Config, jiraConnector connector.JiraConnector) (*JiraService, error) {
+	dbPusher, err := dbpusher.NewDbPusher(config)
+	if err != nil {
+		return nil, err
+	}
+	return &JiraService{
 		jiraConnector:   jiraConnector,
 		dataTransformer: *datatransformer.NewDataTransformer(),
-		dbPusher:        *dbpusher.NewDbPusher(config),
-	}
+		dbPusher:        *dbPusher,
+	}, nil
 }
 
 func (js JiraService) GetProjectsPage(search string, limit, page int) (*structures.ResponseProject, error) {
@@ -35,8 +40,8 @@ func (js JiraService) PushDataToDb(project string, issues []structures.JiraIssue
 	data := js.TransformDataToDb(project, issues)
 
 	if err := js.dbPusher.PushIssues(project, data); err != nil {
-		log.Printf("error while push issues: %v", err)
-		return err
+		log.Println(err)
+		return fmt.Errorf("%w", err)
 	}
 
 	return nil

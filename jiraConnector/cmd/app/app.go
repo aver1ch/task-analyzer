@@ -17,11 +17,16 @@ type JiraApp struct {
 	jiraConnector *connector.JiraConnector
 }
 
-func NewApp(cfg configreader.Config) *JiraApp {
+func NewApp(cfg configreader.Config) (*JiraApp, error) {
 	con := connector.NewJiraConnector(cfg)
 	log.Println("created jira connection")
 
-	service := jiraservice.NewJiraService(cfg, *con)
+	service, err := jiraservice.NewJiraService(cfg, *con)
+	if err != nil {
+		ansErr := fmt.Errorf("error create service: %w", err)
+		log.Println(ansErr)
+		return nil, ansErr
+	}
 	log.Println("created jira service")
 
 	router := mux.NewRouter()
@@ -36,7 +41,7 @@ func NewApp(cfg configreader.Config) *JiraApp {
 	return &JiraApp{
 		server:        server,
 		jiraConnector: con,
-	}
+	}, nil
 }
 
 func (a *JiraApp) Run() error {

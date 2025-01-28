@@ -7,6 +7,7 @@ import (
 
 	configreader "github.com/jiraconnector/internal/configReader"
 	datatransformer "github.com/jiraconnector/internal/dataTransformer"
+	myerr "github.com/jiraconnector/internal/dbPusher/errors"
 	"github.com/jiraconnector/internal/structures"
 	_ "github.com/lib/pq"
 )
@@ -15,17 +16,18 @@ type DbPusher struct {
 	db *sql.DB
 }
 
-func NewDbPusher(cfg configreader.Config) *DbPusher {
+func NewDbPusher(cfg configreader.Config) (*DbPusher, error) {
 	connStr := buildConnectionstring(&cfg.DBCfg)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		log.Printf("error open database: %v", err)
-		return nil
+		ansErr := fmt.Errorf("%w :: %w", myerr.ErrOpenDb, err)
+		log.Println(ansErr)
+		return nil, ansErr
 	}
 
 	return &DbPusher{
 		db: db,
-	}
+	}, nil
 }
 
 func (dbp *DbPusher) Close() {
@@ -34,27 +36,12 @@ func (dbp *DbPusher) Close() {
 
 func (dbp *DbPusher) PushProject(project structures.DBProject) (int, error) {
 	var projectId int
-	query := "INSERT INTO project (title) VALUES ($1) RETURNIND id"
+	query := "INSERT INTO project (title) VALUES ($1) ON CONFLICT (title) DO NOTHING RETURNING id"
 
 	if err := dbp.db.QueryRow(query, project.Title).Scan(&projectId); err != nil {
-		return 0, fmt.Errorf("error insert project %s: %v", project.Title, err)
-	}
-
-	log.Printf("Project %s was added", project.Title)
-	return projectId, nil
-}
-
-func (dbp *DbPusher) getProjectId(projectName string) (int, error) {
-	var projectId int
-	var err error
-	query := "SELECT id FROM project WHERE title=$1"
-
-	_ = dbp.db.QueryRow(query, projectName).Scan(&projectId)
-	if projectId == 0 {
-		projectId, err = dbp.PushProject(structures.DBProject{Title: projectName})
-		if err != nil {
-			return 0, fmt.Errorf("error select project %s id: %v", projectName, err)
-		}
+		ansErr := fmt.Errorf("%w - %s :: %w", myerr.ErrInsertProject, project.Title, err)
+		log.Println(ansErr)
+		return 0, ansErr
 	}
 
 	return projectId, nil
@@ -63,21 +50,27 @@ func (dbp *DbPusher) getProjectId(projectName string) (int, error) {
 func (dbp *DbPusher) PushProjects(projects []structures.DBProject) error {
 	tx, err := dbp.db.Begin()
 	if err != nil {
-		return fmt.Errorf("transaction begin error: %v", err)
+		ansErr := fmt.Errorf("%w :: %w", myerr.ErrTranBegin, err)
+		log.Println(ansErr)
+		return ansErr
 	}
 
 	for _, project := range projects {
 		_, err = dbp.PushProject(project)
 		if err != nil {
-			log.Printf("error while push project %s. Rollback.", project.Title)
+			ansErr := fmt.Errorf("%w - %s :: %w", myerr.ErrPushProject, project.Title, err)
+			log.Println(ansErr)
 			tx.Rollback()
-			return err
+			return ansErr
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("transaction commit error : %v", err)
+		ansErr := fmt.Errorf("%w :: %w", myerr.ErrTranClose, err)
+		log.Println(ansErr)
+		return ansErr
 	}
+
 	log.Println("All projects were saved")
 	return nil
 
@@ -85,34 +78,20 @@ func (dbp *DbPusher) PushProjects(projects []structures.DBProject) error {
 
 func (dbp *DbPusher) PushAuthor(author structures.DBAuthor) (int, error) {
 	var authorId int
-	query := "INSERT INTO author (name) VALUES ($1) RETURNING id"
+	query := "INSERT INTO author (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING id"
 
 	if err := dbp.db.QueryRow(query, author.Name).Scan(&authorId); err != nil {
-		return 0, fmt.Errorf("error insert author %s: %v", author.Name, err)
+		ansErr := fmt.Errorf("%w - %s :: %w", myerr.ErrInsertAuthor, author.Name, err)
+		log.Println(ansErr)
+		return 0, ansErr
 	}
-	log.Printf("Author %s was added", author.Name)
+
 	return authorId, nil
 
 }
 
-func (dbp *DbPusher) getAuthorId(author structures.DBAuthor) (int, error) {
-	var authorId int
-	var err error
-	query := "SELECT id FROM author WHERE name=$1 RETURNING id"
-
-	_ = dbp.db.QueryRow(query, author.Name).Scan(&authorId)
-	if authorId == 0 {
-		authorId, err = dbp.PushAuthor(author)
-		if err != nil {
-			return 0, fmt.Errorf("error select author %s id: %v", author.Name, err)
-		}
-	}
-
-	return authorId, nil
-}
-
-func (dbp *DbPusher) PushIssue(projectName string, issue datatransformer.DataTransformer) (int, error) {
-	projectId, err := dbp.getProjectId(projectName)
+func (dbp *DbPusher) PushIssue(project string, issue datatransformer.DataTransformer) (int, error) {
+	projectId, err := dbp.getProjectId(project)
 	if err != nil {
 		return 0, err
 	}
@@ -128,10 +107,24 @@ func (dbp *DbPusher) PushIssue(projectName string, issue datatransformer.DataTra
 	}
 
 	query := `
-	INSER INTO issue 
-		(projectId, authorId, assigneeId, key, summary, description, type, priority, status, createdTime, closedTime, updatedTume, timeSpent)
+	INSERT INTO issue 
+		(projectId, authorId, assigneeId, key, summary, description, type, priority, status, createdTime, closedTime, updatedTime, timeSpent)
 	VALUES 
 		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	ON CONFLICT (key)
+	DO UPDATE SET
+		projectId = EXCLUDED.projectId, 
+		authorId = EXCLUDED.authorId, 
+		assigneeId = EXCLUDED.assigneeId, 
+		summary = EXCLUDED.summary, 
+		description = EXCLUDED.description, 
+		type = EXCLUDED.type, 
+		priority = EXCLUDED.priority, 
+		status = EXCLUDED.status, 
+		createdTime = EXCLUDED.createdTime, 
+		closedTime = EXCLUDED.closedTime, 
+		updatedTime = EXCLUDED.updatedTime, 
+		timeSpent = EXCLUDED.timeSpent
 	RETURNING id
 	`
 
@@ -146,32 +139,79 @@ func (dbp *DbPusher) PushIssue(projectName string, issue datatransformer.DataTra
 		iss.Key, iss.Summary, iss.Description, iss.Type,
 		iss.Priority, iss.Status, iss.CreatedTime,
 		iss.ClosedTime, iss.UpdatedTime, iss.TimeSpent).Scan(&issueId); err != nil {
-		return 0, err
+
+		ansErr := fmt.Errorf("%w - %s :: %w", myerr.ErrInsertIssue, project, err)
+		log.Println(ansErr)
+		return 0, ansErr
 	}
 
 	return issueId, nil
 }
 
-func (dbp *DbPusher) PushIssues(projectName string, issues []datatransformer.DataTransformer) error {
+func (dbp *DbPusher) PushIssues(project string, issues []datatransformer.DataTransformer) error {
 	tx, err := dbp.db.Begin()
 	if err != nil {
-		return fmt.Errorf("transaction begin error: %v", err)
+		ansErr := fmt.Errorf("%w :: %w", myerr.ErrTranBegin, err)
+		log.Println(ansErr)
+		return ansErr
 	}
 
 	for _, issue := range issues {
-		_, err := dbp.PushIssue(projectName, issue)
+		_, err := dbp.PushIssue(project, issue)
 		if err != nil {
-			log.Printf("error while push issues for project %s. Rollback.", projectName)
+			ansErr := fmt.Errorf("%w - %s :: %w", myerr.ErrPushIssue, project, err)
+			log.Println(ansErr)
 			tx.Rollback()
-			return err
+			return ansErr
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("transaction commit error : %v", err)
+		ansErr := fmt.Errorf("%w :: %w", myerr.ErrTranClose, err)
+		log.Println(ansErr)
+		return ansErr
 	}
+
 	log.Println("All issues were saved")
 	return nil
+}
+
+func (dbp *DbPusher) getAuthorId(author structures.DBAuthor) (int, error) {
+	var authorId int
+	var err error
+	query := "SELECT id FROM author WHERE name=$1"
+
+	_ = dbp.db.QueryRow(query, author.Name).Scan(&authorId)
+	log.Printf("AUTHOR ID: %d", authorId)
+	if authorId == 0 {
+		authorId, err = dbp.PushAuthor(author)
+		if err != nil {
+			ansErr := fmt.Errorf("%w - %s :: %w", myerr.ErrSelectAuthor, author.Name, err)
+			log.Println(ansErr)
+			return 0, ansErr
+		}
+	}
+
+	return authorId, nil
+}
+
+func (dbp *DbPusher) getProjectId(project string) (int, error) {
+	var projectId int
+	var err error
+	query := "SELECT id FROM project WHERE title=$1"
+
+	_ = dbp.db.QueryRow(query, project).Scan(&projectId)
+	log.Printf("PROJECT ID: %d", projectId)
+	if projectId == 0 {
+		projectId, err = dbp.PushProject(structures.DBProject{Title: project})
+		if err != nil {
+			ansErr := fmt.Errorf("%w - %s :: %w", myerr.ErrSelectProject, project, err)
+			log.Println(ansErr)
+			return 0, ansErr
+		}
+	}
+
+	return projectId, nil
 }
 
 func buildConnectionstring(cfg *configreader.DBConfig) string {
