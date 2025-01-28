@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -120,6 +121,9 @@ func (con *JiraConnector) GetProjectIssues(project string) ([]structures.JiraIss
 	var wg sync.WaitGroup
 	var issuesMux sync.Mutex
 
+	ctx, cancel := context.WithCancel(context.Background())
+	errChan := make(chan error, 1)
+
 	for i := 0; i < threadCount; i++ {
 		wg.Add(1)
 		//find start index for get issues
@@ -129,21 +133,36 @@ func (con *JiraConnector) GetProjectIssues(project string) ([]structures.JiraIss
 		}
 
 		go func() {
+
 			defer wg.Done()
-			//TODO: should i add count of recquest like in example?
+			//TODO: should i add count of request like in example?
+			select {
+			case <-ctx.Done():
+				log.Println("stop go thread")
+				return
+			default:
+				issues, err := con.getIssuesForOneThread(issueStart, project)
+				if err != nil {
+					ansErr := fmt.Errorf("%w :: %w", myErr.ErrGetIssues, err)
+					errChan <- ansErr
+					log.Println(ansErr)
+					return
+				}
 
-			issues, err := con.getIssuesForOneThread(issueStart, project)
-			if err != nil {
-				ansErr := fmt.Errorf("%w :: %w", myErr.ErrGetIssues, err)
-				log.Println(ansErr)
-				//TODO: stop all threads
+				issuesMux.Lock()
+				defer issuesMux.Unlock()
+				allIssues = append(allIssues, issues...)
+
 			}
-
-			issuesMux.Lock()
-			defer issuesMux.Unlock()
-			allIssues = append(allIssues, issues...)
 		}()
 	}
+
+	go func() {
+		if err := <-errChan; err != nil {
+			log.Println(err)
+			cancel()
+		}
+	}()
 
 	wg.Wait()
 
