@@ -10,18 +10,25 @@ import (
 	jiraservice "github.com/jiraconnector/internal/apiJiraConnector/jiraService"
 	configreader "github.com/jiraconnector/internal/configReader"
 	"github.com/jiraconnector/internal/connector"
+	dbpusher "github.com/jiraconnector/internal/dbPusher"
 )
 
 type JiraApp struct {
 	server        *http.Server
 	jiraConnector *connector.JiraConnector
+	db            *dbpusher.DbPusher
 }
 
 func NewApp(cfg configreader.Config) (*JiraApp, error) {
 	con := connector.NewJiraConnector(cfg)
 	log.Println("created jira connection")
 
-	service, err := jiraservice.NewJiraService(cfg, *con)
+	dbPusher, err := dbpusher.NewDbPusher(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	service, err := jiraservice.NewJiraService(cfg, *con, *dbPusher)
 	if err != nil {
 		ansErr := fmt.Errorf("error create service: %w", err)
 		log.Println(ansErr)
@@ -51,5 +58,6 @@ func (a *JiraApp) Run() error {
 
 func (a *JiraApp) Close() {
 	log.Println("close app")
+	a.db.Close()
 	a.server.Close()
 }

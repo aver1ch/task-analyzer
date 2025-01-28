@@ -17,15 +17,11 @@ type JiraService struct {
 	dbPusher        dbpusher.DbPusher
 }
 
-func NewJiraService(config configreader.Config, jiraConnector connector.JiraConnector) (*JiraService, error) {
-	dbPusher, err := dbpusher.NewDbPusher(config)
-	if err != nil {
-		return nil, err
-	}
+func NewJiraService(config configreader.Config, jiraConnector connector.JiraConnector, dbPusher dbpusher.DbPusher) (*JiraService, error) {
 	return &JiraService{
 		jiraConnector:   jiraConnector,
 		dataTransformer: *datatransformer.NewDataTransformer(),
-		dbPusher:        *dbPusher,
+		dbPusher:        dbPusher,
 	}, nil
 }
 
