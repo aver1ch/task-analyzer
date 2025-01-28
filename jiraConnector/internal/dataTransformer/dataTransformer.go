@@ -34,10 +34,11 @@ func (dt *DataTransformer) TransformProjectDB(jiraProject structures.JiraProject
 }
 
 func (dt *DataTransformer) TransformIssueDB(jiraIssue structures.JiraIssue) structures.DBIssue {
-	createdTime, _ := time.Parse("2006-01-002T15:04:05.999-0700", jiraIssue.Fields.CreatedTime)
-	closedTime, _ := time.Parse("2006-01-002T15:04:05.999-0700", jiraIssue.Fields.ClosedTime)
-	updatedTime, _ := time.Parse("2006-01-002T15:04:05.999-0700", jiraIssue.Fields.UpdatedTime)
+	layout := "2006-01-02T15:04:05.000-0700"
 	timeSpent, _ := strconv.Atoi(jiraIssue.Fields.TimeSpent)
+	createdTime, _ := time.Parse(layout, jiraIssue.Fields.CreatedTime)
+	updatedTime, _ := time.Parse(layout, jiraIssue.Fields.UpdatedTime)
+	closedTime, _ := time.Parse(layout, jiraIssue.Fields.ClosedTime)
 
 	return structures.DBIssue{
 		Key:         jiraIssue.Key,
