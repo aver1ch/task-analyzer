@@ -182,7 +182,6 @@ func (dbp *DbPusher) getAuthorId(author structures.DBAuthor) (int, error) {
 	query := "SELECT id FROM author WHERE name=$1"
 
 	_ = dbp.db.QueryRow(query, author.Name).Scan(&authorId)
-	log.Printf("AUTHOR ID: %d", authorId)
 	if authorId == 0 {
 		authorId, err = dbp.PushAuthor(author)
 		if err != nil {
@@ -201,7 +200,6 @@ func (dbp *DbPusher) getProjectId(project string) (int, error) {
 	query := "SELECT id FROM project WHERE title=$1"
 
 	_ = dbp.db.QueryRow(query, project).Scan(&projectId)
-	log.Printf("PROJECT ID: %d", projectId)
 	if projectId == 0 {
 		projectId, err = dbp.PushProject(structures.DBProject{Title: project})
 		if err != nil {
