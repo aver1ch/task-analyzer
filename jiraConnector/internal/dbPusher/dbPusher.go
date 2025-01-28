@@ -98,7 +98,7 @@ func (dbp *DbPusher) PushAuthor(author structures.DBAuthor) (int, error) {
 func (dbp *DbPusher) getAuthorId(author structures.DBAuthor) (int, error) {
 	var authorId int
 	var err error
-	query := "SELECT id FROM author WHERE name=$1"
+	query := "SELECT id FROM author WHERE name=$1 RETURNING id"
 
 	_ = dbp.db.QueryRow(query, author.Name).Scan(&authorId)
 	if authorId == 0 {
@@ -132,6 +132,7 @@ func (dbp *DbPusher) PushIssue(projectName string, issue datatransformer.DataTra
 		(projectId, authorId, assigneeId, key, summary, description, type, priority, status, createdTime, closedTime, updatedTume, timeSpent)
 	VALUES 
 		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	RETURNING id
 	`
 
 	var issueId int

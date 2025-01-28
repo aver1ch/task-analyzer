@@ -14,6 +14,10 @@ type DataTransformer struct {
 	Assignee structures.DBAuthor
 }
 
+func NewDataTransformer() *DataTransformer {
+	return &DataTransformer{}
+}
+
 //add changelog
 //func TransformStatusDB(jiraIssue structures.JiraIssue) structures.DBStatusChanges {}
 

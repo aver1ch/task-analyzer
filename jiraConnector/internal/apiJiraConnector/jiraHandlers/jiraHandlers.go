@@ -11,16 +11,19 @@ import (
 	"github.com/jiraconnector/internal/structures"
 )
 
-type JiraService interface {
+type JiraServiceInterface interface {
 	GetProjectsPage(search string, limit, page int) (*structures.ResponseProject, error)
 	UpdateProjects(projectId string) ([]structures.JiraIssue, error)
+
+	PushDataToDb(project string, issues []structures.JiraIssue) error
+	TransformDataToDb(project string, issues []structures.JiraIssue) []datatransformer.DataTransformer
 }
 
 type handler struct {
-	service JiraService
+	service JiraServiceInterface
 }
 
-func NewHandler(service JiraService, router *mux.Router) *mux.Router {
+func NewHandler(service JiraServiceInterface, router *mux.Router) *mux.Router {
 	h := handler{service: service}
 
 	router.HandleFunc("/projects", h.projects).Methods(http.MethodOptions, http.MethodGet)
@@ -59,27 +62,21 @@ func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
-	projectId := vars["project"]
-	if projectId == "" {
+	project := vars["project"]
+	if project == "" {
 		//log.Println(err)
 		//http.Error(w, err.Error(), http.StatusBadRequest) //TODO: norm errors
 		return
 	}
 
-	issues, err := h.service.UpdateProjects(projectId)
+	issues, err := h.service.UpdateProjects(project)
 	if err != nil {
 		log.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError) //TODO: norm errors
 		return
 	}
 
-	//trans
-	var dt datatransformer.DataTransformer
-	var issuesDb []datatransformer.DataTransformer
-	for _, issue := range issues {
-		issuesDb = append(issuesDb, *dt.TransformToDbIssueSet(projectId, issue))
-	}
-	//push
+	h.service.PushDataToDb(project, issues)
 
 	w.WriteHeader(http.StatusOK)
 }
