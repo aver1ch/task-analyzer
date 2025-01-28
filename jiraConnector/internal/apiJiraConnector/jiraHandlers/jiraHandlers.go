@@ -90,6 +90,12 @@ func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err = json.NewEncoder(w).Encode(map[string]string{project: "updated"}); err != nil {
+		log.Printf("%v :: %v", myErr.ErrEncodeAns, err)
+		http.Error(w, myErr.ErrEncodeAns.Error(), myErr.GetStatusCode(myErr.ErrorsProject, myErr.ErrEncodeAns))
+		return
+	}
+
 	log.Println("Update issues")
 	w.WriteHeader(http.StatusOK)
 }
