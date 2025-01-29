@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 
 	configreader "github.com/jiraconnector/internal/configReader"
 	datatransformer "github.com/jiraconnector/internal/dataTransformer"
@@ -90,6 +91,24 @@ func (dbp *DbPusher) PushAuthor(author structures.DBAuthor) (int, error) {
 
 }
 
+func (dbp *DbPusher) PushStatusChanges(issue int, changes datatransformer.DataTransformer) error {
+	query := "INSERT INTO statuschanges (issueId, authorId, changeTime, fromStatus, toStatus) VALUES ($1, $2, $3, $4, $5)"
+	for author, statusChange := range changes.StatusChanges {
+		if dbp.hasStatusChange(issue, statusChange.ChangeTime) {
+			log.Println("already has such status change")
+			return nil
+		}
+		authorId, err := dbp.getAuthorId(structures.DBAuthor{Name: author})
+		if err != nil {
+			return err
+		}
+		if _, err := dbp.db.Exec(query, issue, authorId, statusChange.ChangeTime, statusChange.FromStatus, statusChange.ToStatus); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (dbp *DbPusher) PushIssue(project string, issue datatransformer.DataTransformer) (int, error) {
 	projectId, err := dbp.getProjectId(project)
 	if err != nil {
@@ -157,9 +176,16 @@ func (dbp *DbPusher) PushIssues(project string, issues []datatransformer.DataTra
 	}
 
 	for _, issue := range issues {
-		_, err := dbp.PushIssue(project, issue)
+		issueId, err := dbp.PushIssue(project, issue)
 		if err != nil {
 			ansErr := fmt.Errorf("%w - %s :: %w", myerr.ErrPushIssue, project, err)
+			log.Println(ansErr)
+			tx.Rollback()
+			return ansErr
+		}
+
+		if err := dbp.PushStatusChanges(issueId, issue); err != nil {
+			ansErr := fmt.Errorf("%w :: %w", myerr.ErrInsertStatusChange, err)
 			log.Println(ansErr)
 			tx.Rollback()
 			return ansErr
@@ -210,6 +236,16 @@ func (dbp *DbPusher) getProjectId(project string) (int, error) {
 	}
 
 	return projectId, nil
+}
+
+func (dbp *DbPusher) hasStatusChange(issue int, time time.Time) bool {
+	var count int
+	query := "SELECT COUNT(*) FROM statuschanges WHERE issueId=$1 AND changeTime=$2"
+	if err := dbp.db.QueryRow(query, issue, time).Scan(&count); err != nil {
+		log.Printf("err select status change %v", err)
+		return false
+	}
+	return count != 0
 }
 
 func buildConnectionstring(cfg *configreader.DBConfig) string {

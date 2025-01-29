@@ -172,7 +172,7 @@ func (con *JiraConnector) GetProjectIssues(project string) ([]structures.JiraIss
 
 func (con *JiraConnector) getIssuesForOneThread(startAt int, project string) ([]structures.JiraIssue, error) {
 	url := fmt.Sprintf(
-		"%s/rest/api/2/search?jql=project=%s&startAt=%d&maxResult=%d",
+		"%s/rest/api/2/search?jql=project=%s&expand=changelog&startAt=%d&maxResult=%d",
 		con.cfg.Url, project, startAt, con.cfg.IssueInOneReq)
 
 	resp, err := con.retryRequest("GET", url)
@@ -200,7 +200,7 @@ func (con *JiraConnector) getIssuesForOneThread(startAt int, project string) ([]
 }
 
 func (con *JiraConnector) getTotalIssues(project string) (int, error) {
-	url := fmt.Sprintf("%s/rest/api/2/search?jql=project=%s&maxResults=0", con.cfg.Url, project)
+	url := fmt.Sprintf("%s/rest/api/2/search?jql=project=%s&maxResults=0&", con.cfg.Url, project)
 
 	resp, err := con.retryRequest("GET", url)
 	if err != nil {

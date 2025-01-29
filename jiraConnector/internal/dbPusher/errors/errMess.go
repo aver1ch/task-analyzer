@@ -15,6 +15,8 @@ var (
 	ErrInsertIssue = errors.New("can't insert Issue")
 	ErrPushIssue   = errors.New("can't push Issue")
 
+	ErrInsertStatusChange = errors.New("can't insert status change")
+
 	ErrTranBegin = errors.New("error transaction begin")
 	ErrTranClose = errors.New("error transaction close")
 )
